@@ -14,12 +14,12 @@
                 <h1>⚡ PZEM Monitor Dashboard</h1>
                 <div class="status-container">
                     <div class="status-indicator" id="mqttStatus">
-                        <span class="status-dot"></span>
-                        <span id="mqttText">Connecting...</span>
+                        <span class="status-dot offline"></span>
+                        <span>Connecting...</span>
                     </div>
                     <div class="status-indicator" id="wifiStatus">
-                        <span class="status-dot"></span>
-                        <span id="wifiText">WiFi</span>
+                        <span class="status-dot online"></span>
+                        <span>WiFi</span>
                     </div>
                 </div>
             </div>
@@ -81,17 +81,17 @@
                 <div class="card card-relay">
                     <div class="card-icon">🔴</div>
                     <div class="card-label">Relay 1</div>
-                    <button class="relay-btn" id="relay1" data-relay="1">OFF</button>
+                    <button class="relay-btn off" id="relay1" data-relay="1">OFF</button>
                 </div>
                 <div class="card card-relay">
                     <div class="card-icon">🔴</div>
                     <div class="card-label">Relay 2</div>
-                    <button class="relay-btn" id="relay2" data-relay="2">OFF</button>
+                    <button class="relay-btn off" id="relay2" data-relay="2">OFF</button>
                 </div>
                 <div class="card card-relay">
                     <div class="card-icon">🔴</div>
                     <div class="card-label">Relay 3</div>
-                    <button class="relay-btn" id="relay3" data-relay="3">OFF</button>
+                    <button class="relay-btn off" id="relay3" data-relay="3">OFF</button>
                 </div>
             </div>
 
@@ -108,6 +108,18 @@
                     <span class="chart-update" id="lastUpdate">Last update: -</span>
                 </div>
                 <canvas id="powerChart"></canvas>
+            </div>
+            
+            <!-- Status Info -->
+            <div class="card status-info">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <span style="color: #94a3b8; font-size: 12px;">
+                        📡 Topic: <span style="color: #60a5fa;">pzem/esp32/data</span>
+                    </span>
+                    <span style="color: #94a3b8; font-size: 12px;">
+                        🔄 Updates: <span id="updateCount" style="color: #34d399;">0</span>
+                    </span>
+                </div>
             </div>
         </main>
     </div>
