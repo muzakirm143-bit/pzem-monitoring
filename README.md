@@ -23,6 +23,8 @@
 
 ---
 
+[Dashboard Monitoring](https://muzakirm143-bit.github.io/pzem-monitoring/)
+
 ## 📋 Daftar Isi
 - [Mengapa ESP32 untuk Power Monitoring?](#-mengapa-esp32-untuk-power-monitoring)
 - [Demo Singkat](#-demo-singkat)
