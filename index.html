@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 PZEM Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>⚡ PZEM Monitor Dashboard</h1>
+                <div class="status-container">
+                    <div class="status-indicator" id="mqttStatus">
+                        <span class="status-dot"></span>
+                        <span id="mqttText">Connecting...</span>
+                    </div>
+                    <div class="status-indicator" id="wifiStatus">
+                        <span class="status-dot"></span>
+                        <span id="wifiText">WiFi</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <!-- Row 1: Main Parameters -->
+            <div class="grid grid-4">
+                <div class="card">
+                    <div class="card-icon">⚡</div>
+                    <div class="card-label">Tegangan</div>
+                    <div class="card-value" id="voltage">0.0</div>
+                    <div class="card-unit">V</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">🔌</div>
+                    <div class="card-label">Arus</div>
+                    <div class="card-value" id="current">0.00</div>
+                    <div class="card-unit">A</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">💡</div>
+                    <div class="card-label">Daya</div>
+                    <div class="card-value" id="power">0.0</div>
+                    <div class="card-unit">W</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">📊</div>
+                    <div class="card-label">Power Factor</div>
+                    <div class="card-value" id="pf">0.00</div>
+                    <div class="card-unit">PF</div>
+                </div>
+            </div>
+
+            <!-- Row 2: Energy & Cost -->
+            <div class="grid grid-3">
+                <div class="card card-energy">
+                    <div class="card-icon">🔋</div>
+                    <div class="card-label">Energi</div>
+                    <div class="card-value" id="energy">0.000</div>
+                    <div class="card-unit">kWh</div>
+                </div>
+                <div class="card card-energy">
+                    <div class="card-icon">📈</div>
+                    <div class="card-label">Total Energi</div>
+                    <div class="card-value" id="totalEnergy">0.000</div>
+                    <div class="card-unit">kWh</div>
+                </div>
+                <div class="card card-cost">
+                    <div class="card-icon">💰</div>
+                    <div class="card-label">Estimasi Biaya</div>
+                    <div class="card-value" id="cost">Rp 0</div>
+                    <div class="card-unit">IDR</div>
+                </div>
+            </div>
+
+            <!-- Row 3: Relay Control -->
+            <div class="grid grid-3">
+                <div class="card card-relay">
+                    <div class="card-icon">🔴</div>
+                    <div class="card-label">Relay 1</div>
+                    <button class="relay-btn" id="relay1" data-relay="1">OFF</button>
+                </div>
+                <div class="card card-relay">
+                    <div class="card-icon">🔴</div>
+                    <div class="card-label">Relay 2</div>
+                    <button class="relay-btn" id="relay2" data-relay="2">OFF</button>
+                </div>
+                <div class="card card-relay">
+                    <div class="card-icon">🔴</div>
+                    <div class="card-label">Relay 3</div>
+                    <button class="relay-btn" id="relay3" data-relay="3">OFF</button>
+                </div>
+            </div>
+
+            <!-- Row 4: Control All -->
+            <div class="grid grid-2">
+                <button class="btn btn-success" id="allOn">✅ All ON</button>
+                <button class="btn btn-danger" id="allOff">❌ All OFF</button>
+            </div>
+
+            <!-- Row 5: Chart -->
+            <div class="card chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">📉 Grafik Daya (W)</span>
+                    <span class="chart-update" id="lastUpdate">Last update: -</span>
+                </div>
+                <canvas id="powerChart"></canvas>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
