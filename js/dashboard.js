@@ -1,5 +1,6 @@
 // ============ KONFIGURASI ============
-const MQTT_BROKER = 'wss://broker.hivemq.com:8000/mqtt';
+// Gunakan port 8884 untuk WebSocket (bukan 8000)
+const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'pzem/esp32/data';
 const MQTT_TOPIC_RELAY = 'pzem/esp32/relay';
 
@@ -65,13 +66,25 @@ const powerChart = new Chart(ctx, {
 function connectMQTT() {
     updateStatus('mqttStatus', 'Connecting...', false);
     
-    client = mqtt.connect(MQTT_BROKER);
+    // Konfigurasi MQTT dengan opsi yang lebih robust
+    const options = {
+        clientId: 'pzem_dashboard_' + Math.random().toString(16).substr(2, 8),
+        reconnectPeriod: 3000,
+        connectTimeout: 30000,
+        keepalive: 60,
+        clean: true
+    };
+    
+    client = mqtt.connect(MQTT_BROKER, options);
     
     client.on('connect', () => {
-        console.log('Connected to MQTT');
+        console.log('✅ Connected to MQTT Broker');
         updateStatus('mqttStatus', 'Online', true);
         client.subscribe(MQTT_TOPIC);
         client.subscribe(MQTT_TOPIC_RELAY);
+        console.log('📡 Subscribed to topics:');
+        console.log('   - ' + MQTT_TOPIC);
+        console.log('   - ' + MQTT_TOPIC_RELAY);
     });
     
     client.on('message', (topic, message) => {
@@ -95,8 +108,14 @@ function connectMQTT() {
     });
     
     client.on('close', () => {
+        console.log('MQTT connection closed');
         updateStatus('mqttStatus', 'Disconnected', false);
         setTimeout(connectMQTT, 5000);
+    });
+    
+    client.on('offline', () => {
+        console.log('MQTT offline');
+        updateStatus('mqttStatus', 'Offline', false);
     });
 }
 
@@ -136,9 +155,9 @@ function updateDashboard(data) {
     document.getElementById('cost').textContent = `Rp ${Math.round(cost).toLocaleString('id-ID')}`;
     
     // Update relay status
-    updateRelayButton(1, data.relay1);
-    updateRelayButton(2, data.relay2);
-    updateRelayButton(3, data.relay3);
+    if (data.relay1 !== undefined) updateRelayButton(1, data.relay1);
+    if (data.relay2 !== undefined) updateRelayButton(2, data.relay2);
+    if (data.relay3 !== undefined) updateRelayButton(3, data.relay3);
     
     // Update chart
     if (data.power !== undefined && data.power > 0) {
@@ -149,7 +168,7 @@ function updateDashboard(data) {
     if (data.timestamp) {
         const date = new Date(data.timestamp * 1000);
         document.getElementById('lastUpdate').textContent = 
-            `Last update: ${date.toLocaleTimeString()}`;
+            `Last update: ${date.toLocaleTimeString('id-ID')}`;
     }
     
     updateCount++;
@@ -163,9 +182,13 @@ function updateRelayButton(relayId, status) {
     if (status) {
         btn.textContent = 'ON';
         btn.className = 'relay-btn on';
+        btn.style.background = '#34d399';
+        btn.style.color = '#064e3b';
     } else {
         btn.textContent = 'OFF';
         btn.className = 'relay-btn off';
+        btn.style.background = '#ef4444';
+        btn.style.color = '#7f1d1d';
     }
 }
 
@@ -175,6 +198,7 @@ function updateRelayStatus(data) {
     
     if (relay >= 1 && relay <= 3) {
         updateRelayButton(relay, status);
+        console.log(`🔄 Relay ${relay} -> ${status ? 'ON' : 'OFF'}`);
     }
 }
 
@@ -186,7 +210,7 @@ function addDataToChart(power) {
     }
     
     const now = new Date();
-    const label = now.toLocaleTimeString();
+    const label = now.toLocaleTimeString('id-ID');
     
     powerChart.data.labels.push(label);
     powerChart.data.datasets[0].data.push(power);
@@ -202,7 +226,7 @@ function addDataToChart(power) {
 // ============ RELAY CONTROL ============
 function controlRelay(relay, status) {
     if (!client || !client.connected) {
-        alert('MQTT tidak terhubung!');
+        alert('⚠️ MQTT tidak terhubung!');
         return;
     }
     
@@ -212,11 +236,17 @@ function controlRelay(relay, status) {
     });
     
     client.publish(MQTT_TOPIC_RELAY, message);
-    console.log(`Relay ${relay} -> ${status ? 'ON' : 'OFF'}`);
+    console.log(`📤 Relay ${relay} -> ${status ? 'ON' : 'OFF'}`);
 }
 
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('📊 PZEM Dashboard Loaded!');
+    console.log('MQTT Broker: ' + MQTT_BROKER);
+    console.log('Topics:');
+    console.log('  - Data: ' + MQTT_TOPIC);
+    console.log('  - Relay: ' + MQTT_TOPIC_RELAY);
+    
     // Relay buttons
     document.querySelectorAll('.relay-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -247,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============ RECONNECT ============
 setInterval(() => {
     if (client && !client.connected) {
-        console.log('Attempting to reconnect...');
+        console.log('🔄 Attempting to reconnect...');
         connectMQTT();
     }
 }, 30000);
@@ -262,8 +292,4 @@ document.addEventListener('keydown', (e) => {
     if (e.key === '#') controlRelay(3, false);
 });
 
-console.log('📊 PZEM Dashboard Loaded!');
-console.log('MQTT Broker: ' + MQTT_BROKER);
-console.log('Topics:');
-console.log('  - Data: ' + MQTT_TOPIC);
-console.log('  - Relay: ' + MQTT_TOPIC_RELAY);
+console.log('✅ Dashboard ready!');
