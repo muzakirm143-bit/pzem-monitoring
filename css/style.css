@@ -94,6 +94,10 @@ header h1 {
     grid-template-columns: repeat(2, 1fr);
 }
 
+.grid-1 {
+    grid-template-columns: 1fr;
+}
+
 /* Cards */
 .card {
     background: rgba(255, 255, 255, 0.05);
@@ -258,6 +262,17 @@ header h1 {
     max-width: 100%;
 }
 
+/* Status Info */
+.status-info {
+    padding: 12px 20px;
+    grid-column: 1 / -1;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.status-info span {
+    font-family: 'Inter', monospace;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .grid-4 {
@@ -296,16 +311,19 @@ header h1 {
     header h1 {
         font-size: 20px;
     }
+    
+    .status-info {
+        padding: 8px 12px;
+    }
+    .status-info span {
+        font-size: 10px;
+    }
 }
 
 /* Animations */
 @keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .status-dot.pulse {
