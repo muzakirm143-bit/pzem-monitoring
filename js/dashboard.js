@@ -2,13 +2,14 @@
 const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'pzem/esp32/data';
 const MQTT_TOPIC_RELAY = 'pzem/esp32/relay';
-const TARIF_PLN = 605; // Rp 605 per kWh (900 VA Subsidi)
+const TARIF_PLN = 605;
 
 // ============ INISIALISASI ============
 let client = null;
 let powerData = [];
 const MAX_DATA_POINTS = 30;
 let updateCount = 0;
+let lastData = null;
 
 // ============ CHART ============
 const ctx = document.getElementById('powerChart').getContext('2d');
@@ -81,6 +82,7 @@ function connectMQTT() {
         updateStatus('mqttStatus', 'Online', true);
         client.subscribe(MQTT_TOPIC);
         client.subscribe(MQTT_TOPIC_RELAY);
+        console.log('📡 Subscribed to:', MQTT_TOPIC, 'and', MQTT_TOPIC_RELAY);
     });
     
     client.on('message', (topic, message) => {
@@ -88,8 +90,10 @@ function connectMQTT() {
             const data = JSON.parse(message.toString());
             
             if (topic === MQTT_TOPIC) {
+                console.log('📊 Data received:', data);
                 updateDashboard(data);
             } else if (topic === MQTT_TOPIC_RELAY) {
+                console.log('🔄 Relay command:', data);
                 updateRelayStatus(data);
             }
         } catch (e) {
@@ -134,6 +138,8 @@ function updateStatus(elementId, text, isOnline) {
 
 // ============ UPDATE DASHBOARD ============
 function updateDashboard(data) {
+    lastData = data;
+    
     // Main Parameters
     document.getElementById('voltage').textContent = data.voltage?.toFixed(1) || '0.0';
     document.getElementById('current').textContent = data.current?.toFixed(2) || '0.00';
@@ -202,6 +208,7 @@ function updateRelayStatus(data) {
     
     if (relay >= 1 && relay <= 3) {
         updateRelayButton(relay, status);
+        console.log(`🔄 Relay ${relay} -> ${status ? 'ON' : 'OFF'}`);
     }
 }
 
@@ -247,6 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('📊 PZEM Dashboard Loaded!');
     console.log('💰 Tarif: Rp ' + TARIF_PLN + ' per kWh (900 VA Subsidi)');
     console.log('MQTT Broker: ' + MQTT_BROKER);
+    console.log('Waiting for data...');
     
     document.querySelectorAll('.relay-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -278,3 +286,17 @@ setInterval(() => {
         connectMQTT();
     }
 }, 30000);
+
+// ============ CHECK DATA TIMEOUT ============
+setInterval(() => {
+    if (updateCount > 0 && lastData) {
+        const now = Date.now();
+        const lastTimestamp = (lastData.timestamp || 0) * 1000;
+        if (now - lastTimestamp > 15000) {
+            document.getElementById('lastUpdate').textContent = '⚠️ No data for 15s';
+            document.getElementById('lastUpdate').style.color = '#ef4444';
+        } else {
+            document.getElementById('lastUpdate').style.color = '#94a3b8';
+        }
+    }
+}, 5000);
