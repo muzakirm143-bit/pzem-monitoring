@@ -113,7 +113,6 @@ function connectMQTT() {
             } else if (topic === MQTT_TOPIC_RESET) {
                 console.log('🔄 Reset command received');
                 showToast('✅ Energi dan biaya telah direset!', 'success');
-                // Reset tampilan setelah 2 detik
                 setTimeout(() => {
                     document.getElementById('totalEnergy').textContent = '0.000';
                     document.getElementById('cost').textContent = 'Rp 0';
