@@ -9,6 +9,7 @@ let client = null;
 let powerData = [];
 const MAX_DATA_POINTS = 30;
 let updateCount = 0;
+let lastTotalEnergy = 0;
 
 // ============ CHART ============
 const ctx = document.getElementById('powerChart').getContext('2d');
@@ -112,11 +113,11 @@ function connectMQTT() {
                 updateRelayStatus(data);
             } else if (topic === MQTT_TOPIC_RESET) {
                 console.log('🔄 Reset command received');
-                showToast('✅ Energi dan biaya telah direset!', 'success');
-                setTimeout(() => {
-                    document.getElementById('totalEnergy').textContent = '0.000';
-                    document.getElementById('cost').textContent = 'Rp 0';
-                }, 500);
+                showToast('✅ Reset berhasil! Total energi dan biaya = 0', 'success');
+                // Langsung update ke 0
+                document.getElementById('totalEnergy').textContent = '0.000';
+                document.getElementById('cost').textContent = 'Rp 0';
+                lastTotalEnergy = 0;
             }
         } catch (e) {
             console.error('Error parsing JSON:', e);
@@ -170,10 +171,28 @@ function updateDashboard(data) {
     document.getElementById('power').textContent = data.power?.toFixed(1) || '0.0';
     document.getElementById('pf').textContent = data.pf?.toFixed(2) || '0.00';
     document.getElementById('energy').textContent = data.energy?.toFixed(3) || '0.000';
-    document.getElementById('totalEnergy').textContent = data.totalEnergy?.toFixed(3) || '0.000';
     
-    const cost = data.estimatedCost || 0;
-    document.getElementById('cost').textContent = `Rp ${Math.round(cost).toLocaleString('id-ID')}`;
+    // ===== CEK RESET STATUS =====
+    if (data.resetStatus === 'RESET_DONE') {
+        console.log('🔄 Reset confirmed from ESP32');
+        document.getElementById('totalEnergy').textContent = '0.000';
+        document.getElementById('cost').textContent = 'Rp 0';
+        lastTotalEnergy = 0;
+        showToast('✅ Energi dan biaya telah direset!', 'success');
+    } else {
+        // Update normal
+        const totalEnergy = data.totalEnergy || 0;
+        // Cek jika totalEnergy berubah drastis (kemungkinan reset)
+        if (lastTotalEnergy > 0 && totalEnergy < lastTotalEnergy * 0.1) {
+            console.log('⚠️ Detected energy reset, updating display');
+            showToast('🔄 Energi direset oleh ESP32', 'info');
+        }
+        document.getElementById('totalEnergy').textContent = totalEnergy.toFixed(3);
+        lastTotalEnergy = totalEnergy;
+        
+        const cost = data.estimatedCost || 0;
+        document.getElementById('cost').textContent = `Rp ${Math.round(cost).toLocaleString('id-ID')}`;
+    }
     
     if (data.relay1 !== undefined) updateRelayButton(1, data.relay1);
     if (data.relay2 !== undefined) updateRelayButton(2, data.relay2);
@@ -265,7 +284,7 @@ function resetEnergy() {
         return;
     }
     
-    if (!confirm('⚠️ Yakin ingin mereset total energi dan biaya?')) {
+    if (!confirm('⚠️ Yakin ingin mereset total energi dan biaya?\n\nTotal Energi akan menjadi 0.000 kWh\nBiaya akan menjadi Rp 0')) {
         return;
     }
     
@@ -274,8 +293,8 @@ function resetEnergy() {
     });
     
     client.publish(MQTT_TOPIC_RESET, message);
-    console.log('🔄 Reset command sent');
-    showToast('🔄 Mereset energi dan biaya...', 'info');
+    console.log('🔄 Reset command sent to ESP32');
+    showToast('🔄 Mengirim perintah reset...', 'info');
 }
 
 // ============ EVENT LISTENERS ============
