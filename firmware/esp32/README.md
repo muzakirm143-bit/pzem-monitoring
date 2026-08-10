@@ -1,5 +1,3 @@
-## **1. README.md untuk ESP32**
-
 # ESP32 PZEM-004T MQTT Power Monitor
 
 <h1 align="center">
