@@ -2,14 +2,12 @@
 const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'pzem/esp32/data';
 const MQTT_TOPIC_RELAY = 'pzem/esp32/relay';
-const TARIF_PLN = 605;
 
 // ============ INISIALISASI ============
 let client = null;
 let powerData = [];
 const MAX_DATA_POINTS = 30;
 let updateCount = 0;
-let lastData = null;
 
 // ============ CHART ============
 const ctx = document.getElementById('powerChart').getContext('2d');
@@ -82,7 +80,9 @@ function connectMQTT() {
         updateStatus('mqttStatus', 'Online', true);
         client.subscribe(MQTT_TOPIC);
         client.subscribe(MQTT_TOPIC_RELAY);
-        console.log('📡 Subscribed to:', MQTT_TOPIC, 'and', MQTT_TOPIC_RELAY);
+        console.log('📡 Subscribed to topics:');
+        console.log('   - ' + MQTT_TOPIC);
+        console.log('   - ' + MQTT_TOPIC_RELAY);
     });
     
     client.on('message', (topic, message) => {
@@ -90,10 +90,8 @@ function connectMQTT() {
             const data = JSON.parse(message.toString());
             
             if (topic === MQTT_TOPIC) {
-                console.log('📊 Data received:', data);
                 updateDashboard(data);
             } else if (topic === MQTT_TOPIC_RELAY) {
-                console.log('🔄 Relay command:', data);
                 updateRelayStatus(data);
             }
         } catch (e) {
@@ -111,6 +109,11 @@ function connectMQTT() {
         console.log('MQTT connection closed');
         updateStatus('mqttStatus', 'Disconnected', false);
         setTimeout(connectMQTT, 5000);
+    });
+    
+    client.on('offline', () => {
+        console.log('MQTT offline');
+        updateStatus('mqttStatus', 'Offline', false);
     });
 }
 
@@ -138,42 +141,28 @@ function updateStatus(elementId, text, isOnline) {
 
 // ============ UPDATE DASHBOARD ============
 function updateDashboard(data) {
-    lastData = data;
-    
-    // Main Parameters
+    // Update values
     document.getElementById('voltage').textContent = data.voltage?.toFixed(1) || '0.0';
     document.getElementById('current').textContent = data.current?.toFixed(2) || '0.00';
     document.getElementById('power').textContent = data.power?.toFixed(1) || '0.0';
     document.getElementById('pf').textContent = data.pf?.toFixed(2) || '0.00';
     document.getElementById('energy').textContent = data.energy?.toFixed(3) || '0.000';
+    document.getElementById('totalEnergy').textContent = data.totalEnergy?.toFixed(3) || '0.000';
     
-    // Energy
-    const totalEnergy = data.totalEnergy || 0;
-    document.getElementById('totalEnergy').textContent = totalEnergy.toFixed(3);
-    
-    if (data.dailyEnergy !== undefined) {
-        document.getElementById('dailyEnergy').textContent = data.dailyEnergy.toFixed(3);
-    }
-    
-    // Cost
     const cost = data.estimatedCost || 0;
     document.getElementById('cost').textContent = `Rp ${Math.round(cost).toLocaleString('id-ID')}`;
     
-    if (data.monthlyCost !== undefined) {
-        document.getElementById('monthlyCost').textContent = `Rp ${Math.round(data.monthlyCost).toLocaleString('id-ID')}`;
-    }
-    
-    // Relay status
+    // Update relay status
     if (data.relay1 !== undefined) updateRelayButton(1, data.relay1);
     if (data.relay2 !== undefined) updateRelayButton(2, data.relay2);
     if (data.relay3 !== undefined) updateRelayButton(3, data.relay3);
     
-    // Chart
+    // Update chart
     if (data.power !== undefined && data.power > 0) {
         addDataToChart(data.power);
     }
     
-    // Timestamp
+    // Update timestamp
     if (data.timestamp) {
         const date = new Date(data.timestamp * 1000);
         document.getElementById('lastUpdate').textContent = 
@@ -252,10 +241,13 @@ function controlRelay(relay, status) {
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📊 PZEM Dashboard Loaded!');
-    console.log('💰 Tarif: Rp ' + TARIF_PLN + ' per kWh (900 VA Subsidi)');
+    console.log('💰 Tarif: Rp 605 per kWh (900 VA Subsidi)');
     console.log('MQTT Broker: ' + MQTT_BROKER);
-    console.log('Waiting for data...');
+    console.log('Topics:');
+    console.log('  - Data: ' + MQTT_TOPIC);
+    console.log('  - Relay: ' + MQTT_TOPIC_RELAY);
     
+    // Relay buttons
     document.querySelectorAll('.relay-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const relay = parseInt(btn.dataset.relay);
@@ -264,18 +256,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
+    // All ON
     document.getElementById('allOn').addEventListener('click', () => {
         for (let i = 1; i <= 3; i++) {
             controlRelay(i, true);
         }
     });
     
+    // All OFF
     document.getElementById('allOff').addEventListener('click', () => {
         for (let i = 1; i <= 3; i++) {
             controlRelay(i, false);
         }
     });
     
+    // Connect MQTT
     connectMQTT();
 });
 
@@ -287,16 +282,14 @@ setInterval(() => {
     }
 }, 30000);
 
-// ============ CHECK DATA TIMEOUT ============
-setInterval(() => {
-    if (updateCount > 0 && lastData) {
-        const now = Date.now();
-        const lastTimestamp = (lastData.timestamp || 0) * 1000;
-        if (now - lastTimestamp > 15000) {
-            document.getElementById('lastUpdate').textContent = '⚠️ No data for 15s';
-            document.getElementById('lastUpdate').style.color = '#ef4444';
-        } else {
-            document.getElementById('lastUpdate').style.color = '#94a3b8';
-        }
-    }
-}, 5000);
+// ============ KEYBOARD SHORTCUTS ============
+document.addEventListener('keydown', (e) => {
+    if (e.key === '1') controlRelay(1, true);
+    if (e.key === '!') controlRelay(1, false);
+    if (e.key === '2') controlRelay(2, true);
+    if (e.key === '@') controlRelay(2, false);
+    if (e.key === '3') controlRelay(3, true);
+    if (e.key === '#') controlRelay(3, false);
+});
+
+console.log('✅ Dashboard ready!');
