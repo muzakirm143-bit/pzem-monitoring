@@ -73,37 +73,15 @@
                     <div class="card-value" id="totalEnergy">0.000</div>
                     <div class="card-unit">kWh</div>
                 </div>
-                <div class="card card-energy">
-                    <div class="card-icon">📊</div>
-                    <div class="card-label">Energi Hari Ini</div>
-                    <div class="card-value" id="dailyEnergy" style="background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">0.000</div>
-                    <div class="card-unit">kWh</div>
-                </div>
-            </div>
-
-            <!-- Row 3: Cost & Tarif -->
-            <div class="grid grid-3">
                 <div class="card card-cost">
                     <div class="card-icon">💰</div>
-                    <div class="card-label">Estimasi Biaya Total</div>
+                    <div class="card-label">Estimasi Biaya</div>
                     <div class="card-value" id="cost">Rp 0</div>
                     <div class="card-unit">IDR</div>
                 </div>
-                <div class="card card-cost">
-                    <div class="card-icon">📅</div>
-                    <div class="card-label">Biaya Bulan Ini</div>
-                    <div class="card-value" id="monthlyCost" style="background: linear-gradient(135deg, #f472b6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Rp 0</div>
-                    <div class="card-unit">IDR</div>
-                </div>
-                <div class="card" style="background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.2);">
-                    <div class="card-icon">🏷️</div>
-                    <div class="card-label">Tarif Listrik</div>
-                    <div class="card-value" style="background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 24px;">Rp 605</div>
-                    <div class="card-unit">per kWh (900 VA Subsidi)</div>
-                </div>
             </div>
 
-            <!-- Row 4: Relay Control -->
+            <!-- Row 3: Relay Control -->
             <div class="grid grid-3">
                 <div class="card card-relay">
                     <div class="card-icon">🔴</div>
@@ -122,13 +100,13 @@
                 </div>
             </div>
 
-            <!-- Row 5: Control All -->
+            <!-- Row 4: Control All -->
             <div class="grid grid-2">
                 <button class="btn btn-success" id="allOn">✅ All ON</button>
                 <button class="btn btn-danger" id="allOff">❌ All OFF</button>
             </div>
 
-            <!-- Row 6: Chart -->
+            <!-- Row 5: Chart -->
             <div class="card chart-card">
                 <div class="chart-header">
                     <span class="chart-title">📉 Grafik Daya (W)</span>
