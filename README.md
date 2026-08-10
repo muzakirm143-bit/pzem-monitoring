@@ -1,5 +1,3 @@
-## **2. README.md untuk Dashboard**
-
 # PZEM-004T MQTT Dashboard
 
 <h1 align="center">
