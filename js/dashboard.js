@@ -2,6 +2,7 @@
 const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'pzem/esp32/data';
 const MQTT_TOPIC_RELAY = 'pzem/esp32/relay';
+const MQTT_TOPIC_RESET = 'pzem/esp32/reset';
 
 // ============ INISIALISASI ============
 let client = null;
@@ -61,6 +62,20 @@ const powerChart = new Chart(ctx, {
     }
 });
 
+// ============ TOAST NOTIFICATION ============
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 // ============ MQTT CONNECTION ============
 function connectMQTT() {
     updateStatus('mqttStatus', 'Connecting...', false);
@@ -80,9 +95,11 @@ function connectMQTT() {
         updateStatus('mqttStatus', 'Online', true);
         client.subscribe(MQTT_TOPIC);
         client.subscribe(MQTT_TOPIC_RELAY);
+        client.subscribe(MQTT_TOPIC_RESET);
         console.log('📡 Subscribed to topics:');
         console.log('   - ' + MQTT_TOPIC);
         console.log('   - ' + MQTT_TOPIC_RELAY);
+        console.log('   - ' + MQTT_TOPIC_RESET);
     });
     
     client.on('message', (topic, message) => {
@@ -93,6 +110,14 @@ function connectMQTT() {
                 updateDashboard(data);
             } else if (topic === MQTT_TOPIC_RELAY) {
                 updateRelayStatus(data);
+            } else if (topic === MQTT_TOPIC_RESET) {
+                console.log('🔄 Reset command received');
+                showToast('✅ Energi dan biaya telah direset!', 'success');
+                // Reset tampilan setelah 2 detik
+                setTimeout(() => {
+                    document.getElementById('totalEnergy').textContent = '0.000';
+                    document.getElementById('cost').textContent = 'Rp 0';
+                }, 500);
             }
         } catch (e) {
             console.error('Error parsing JSON:', e);
@@ -141,7 +166,6 @@ function updateStatus(elementId, text, isOnline) {
 
 // ============ UPDATE DASHBOARD ============
 function updateDashboard(data) {
-    // Update values
     document.getElementById('voltage').textContent = data.voltage?.toFixed(1) || '0.0';
     document.getElementById('current').textContent = data.current?.toFixed(2) || '0.00';
     document.getElementById('power').textContent = data.power?.toFixed(1) || '0.0';
@@ -152,17 +176,14 @@ function updateDashboard(data) {
     const cost = data.estimatedCost || 0;
     document.getElementById('cost').textContent = `Rp ${Math.round(cost).toLocaleString('id-ID')}`;
     
-    // Update relay status
     if (data.relay1 !== undefined) updateRelayButton(1, data.relay1);
     if (data.relay2 !== undefined) updateRelayButton(2, data.relay2);
     if (data.relay3 !== undefined) updateRelayButton(3, data.relay3);
     
-    // Update chart
     if (data.power !== undefined && data.power > 0) {
         addDataToChart(data.power);
     }
     
-    // Update timestamp
     if (data.timestamp) {
         const date = new Date(data.timestamp * 1000);
         document.getElementById('lastUpdate').textContent = 
@@ -225,7 +246,7 @@ function addDataToChart(power) {
 // ============ RELAY CONTROL ============
 function controlRelay(relay, status) {
     if (!client || !client.connected) {
-        alert('⚠️ MQTT tidak terhubung!');
+        showToast('⚠️ MQTT tidak terhubung!', 'error');
         return;
     }
     
@@ -238,6 +259,26 @@ function controlRelay(relay, status) {
     console.log(`📤 Relay ${relay} -> ${status ? 'ON' : 'OFF'}`);
 }
 
+// ============ RESET ENERGY ============
+function resetEnergy() {
+    if (!client || !client.connected) {
+        showToast('⚠️ MQTT tidak terhubung!', 'error');
+        return;
+    }
+    
+    if (!confirm('⚠️ Yakin ingin mereset total energi dan biaya?')) {
+        return;
+    }
+    
+    const message = JSON.stringify({
+        command: 'reset'
+    });
+    
+    client.publish(MQTT_TOPIC_RESET, message);
+    console.log('🔄 Reset command sent');
+    showToast('🔄 Mereset energi dan biaya...', 'info');
+}
+
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📊 PZEM Dashboard Loaded!');
@@ -246,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Topics:');
     console.log('  - Data: ' + MQTT_TOPIC);
     console.log('  - Relay: ' + MQTT_TOPIC_RELAY);
+    console.log('  - Reset: ' + MQTT_TOPIC_RESET);
     
     // Relay buttons
     document.querySelectorAll('.relay-btn').forEach(btn => {
@@ -270,6 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // Reset Energy
+    document.getElementById('resetEnergy').addEventListener('click', resetEnergy);
+    
     // Connect MQTT
     connectMQTT();
 });
@@ -290,6 +335,8 @@ document.addEventListener('keydown', (e) => {
     if (e.key === '@') controlRelay(2, false);
     if (e.key === '3') controlRelay(3, true);
     if (e.key === '#') controlRelay(3, false);
+    if (e.key === 'r' || e.key === 'R') resetEnergy();
 });
 
 console.log('✅ Dashboard ready!');
+console.log('💡 Keyboard shortcuts: 1,2,3 = ON | !,@,# = OFF | R = Reset');
