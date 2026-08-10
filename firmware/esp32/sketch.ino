@@ -7,6 +7,7 @@
 #include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <Preferences.h> // Untuk menyimpan data
 
 // ============ KONFIGURASI PIN ============
 #define TFT_CS     5
@@ -28,6 +29,10 @@ const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 const char* mqtt_topic = "pzem/esp32/data";
 const char* mqtt_topic_relay = "pzem/esp32/relay";
+const char* mqtt_topic_reset = "pzem/esp32/reset";
+
+// ============ TARIF LISTRIK ============
+const float TARIF_PER_KWH = 605.00;
 
 // ============ INISIALISASI OBJEK ============
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
@@ -35,6 +40,7 @@ PZEM004Tv30 pzem(Serial2, PZEM_RX, PZEM_TX);
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+Preferences preferences;
 
 // ============ VARIABEL GLOBAL ============
 float voltage = 0;
@@ -44,27 +50,42 @@ float energy = 0;
 float frequency = 0;
 float pf = 0;
 float totalEnergy = 0;
-float costPerKwh = 1699.00;
 float estimatedCost = 0;
+float previousEnergy = 0;
 
 unsigned long lastUpdate = 0;
 unsigned long lastDisplay = 0;
 unsigned long lastPublish = 0;
 unsigned long startTime = 0;
+unsigned long apStartTime = 0;
 
 const unsigned long UPDATE_INTERVAL = 2000;
 const unsigned long DISPLAY_INTERVAL = 500;
-const unsigned long PUBLISH_INTERVAL = 5000;
+const unsigned long PUBLISH_INTERVAL = 3000;
+const unsigned long AP_TIMEOUT = 180000;
 
 bool relay1Status = false;
 bool relay2Status = false;
 bool relay3Status = false;
 bool wm_configMode = false;
+bool pzemOK = false;
+bool resetPending = false;
 
 // ============ FUNGSI SETUP ============
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n========================================");
   Serial.println("Starting ESP32 PZEM MQTT Dashboard...");
+  Serial.println("💰 Tarif: Rp " + String(TARIF_PER_KWH, 0) + " per kWh (900 VA Subsidi)");
+  Serial.println("========================================\n");
+  
+  // Load data dari Preferences
+  preferences.begin("pzem", false);
+  totalEnergy = preferences.getFloat("totalEnergy", 0.0);
+  previousEnergy = preferences.getFloat("previousEnergy", 0.0);
+  preferences.end();
+  
+  Serial.printf("📊 Loaded totalEnergy: %.3f kWh\n", totalEnergy);
   
   // Inisialisasi Relay
   pinMode(RELAY1_PIN, OUTPUT);
@@ -74,12 +95,10 @@ void setup() {
   digitalWrite(RELAY1_PIN, HIGH);
   digitalWrite(RELAY2_PIN, HIGH);
   digitalWrite(RELAY3_PIN, HIGH);
-  relay1Status = false;
-  relay2Status = false;
-  relay3Status = false;
   
   // Inisialisasi Serial2 untuk PZEM
   Serial2.begin(9600, SERIAL_8N1, PZEM_RX, PZEM_TX);
+  delay(500);
   
   // Inisialisasi LCD
   tft.initR(INITR_144GREENTAB);
@@ -100,19 +119,26 @@ void setup() {
   
   startTime = millis();
   
-  // Kirim pesan awal
+  // Baca PZEM pertama kali
+  readPZEMData();
+  previousEnergy = energy;
+  
   if (WiFi.status() == WL_CONNECTED) {
     connectMQTT();
   }
+  
+  Serial.println("✅ System Ready!");
+  Serial.println("========================================\n");
 }
 
 // ============ FUNGSI SETUP WIFIMANAGER ============
 void setupWiFiManager() {
   WiFiManager wm;
   wm.setCleanConnect(true);
-  wm.setConnectTimeout(10);
-  wm.setConfigPortalTimeout(120);
+  wm.setConnectTimeout(15);
+  wm.setConfigPortalTimeout(180);
   wm.setMinimumSignalQuality(20);
+  wm.setDebugOutput(false);
   
   const char* apName = "PZEM-Config";
   const char* apPassword = "12345678";
@@ -123,50 +149,94 @@ void setupWiFiManager() {
   tft.setTextSize(1);
   tft.print("WiFi Manager");
   tft.setCursor(10, 25);
-  tft.print("Connecting...");
+  tft.print("Connecting to WiFi...");
   
   bool connected = wm.autoConnect(apName, apPassword);
   
   if (!connected) {
     wm_configMode = true;
+    apStartTime = millis();
+    
     tft.fillScreen(ST7735_BLACK);
+    
     tft.setTextColor(ST7735_YELLOW);
     tft.setCursor(10, 10);
     tft.print("AP MODE ACTIVE");
-    tft.setCursor(10, 30);
-    tft.print("SSID: " + String(apName));
-    tft.setCursor(10, 45);
-    tft.print("Pass: " + String(apPassword));
-    tft.setCursor(10, 60);
-    tft.print("IP: 192.168.4.1");
-    tft.setCursor(10, 75);
+    tft.drawLine(0, 22, 128, 22, ST7735_YELLOW);
+    
+    tft.setTextColor(ST7735_CYAN);
+    tft.setCursor(10, 32);
+    tft.print("SSID:");
+    tft.setTextColor(ST7735_WHITE);
+    tft.setCursor(55, 32);
+    tft.print("PZEM-Config");
+    
+    tft.setTextColor(ST7735_CYAN);
+    tft.setCursor(10, 48);
+    tft.print("Pass:");
+    tft.setTextColor(ST7735_WHITE);
+    tft.setCursor(55, 48);
+    tft.print("12345678");
+    
+    tft.setTextColor(ST7735_CYAN);
+    tft.setCursor(10, 64);
+    tft.print("IP:");
+    tft.setTextColor(ST7735_WHITE);
+    tft.setCursor(55, 64);
+    tft.print("192.168.4.1");
+    
+    tft.setTextColor(ST7735_GREEN);
+    tft.setCursor(10, 80);
     tft.print("Connect & browse");
     
-    unsigned long apStartTime = millis();
+    tft.setTextColor(ST7735_WHITE);
+    tft.setCursor(10, 96);
+    tft.print("Restart in");
+    tft.setTextColor(ST7735_YELLOW);
+    tft.setCursor(80, 96);
+    tft.print("180s");
+    
     while (wm_configMode) {
       wm.process();
+      
       if (WiFi.status() == WL_CONNECTED) {
         wm_configMode = false;
         tft.fillScreen(ST7735_BLACK);
         tft.setTextColor(ST7735_GREEN);
         tft.setCursor(10, 20);
-        tft.print("WiFi Connected!");
+        tft.print("✅ WiFi Connected!");
         tft.setCursor(10, 40);
         tft.print("IP: ");
         tft.print(WiFi.localIP());
         delay(2000);
         break;
       }
-      if (millis() - apStartTime > 120000) {
+      
+      static unsigned long lastTimerUpdate = 0;
+      if (millis() - lastTimerUpdate >= 1000) {
+        lastTimerUpdate = millis();
+        int remaining = (AP_TIMEOUT - (millis() - apStartTime)) / 1000;
+        if (remaining < 0) remaining = 0;
+        
+        tft.fillRect(80, 96, 40, 12, ST7735_BLACK);
+        tft.setTextColor(ST7735_YELLOW);
+        tft.setCursor(80, 96);
+        tft.print(remaining);
+        tft.print("s");
+      }
+      
+      if (millis() - apStartTime > AP_TIMEOUT) {
+        Serial.println("⏰ Timeout! Restarting...");
         ESP.restart();
       }
-      delay(100);
+      
+      delay(50);
     }
   } else {
     tft.fillScreen(ST7735_BLACK);
     tft.setTextColor(ST7735_GREEN);
     tft.setCursor(10, 20);
-    tft.print("WiFi Connected!");
+    tft.print("✅ WiFi Connected!");
     tft.setCursor(10, 40);
     tft.print("IP: ");
     tft.print(WiFi.localIP());
@@ -181,40 +251,69 @@ void callback(char* topic, byte* payload, unsigned int length) {
     message += (char)payload[i];
   }
   
-  Serial.print("MQTT Message: ");
-  Serial.println(message);
-  
-  // Parse JSON
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, message);
   
   if (!error) {
+    // ===== RESET COMMAND =====
+    if (String(topic) == mqtt_topic_reset) {
+      String command = doc["command"];
+      if (command == "reset") {
+        // Reset total energi dan biaya
+        totalEnergy = 0;
+        estimatedCost = 0;
+        previousEnergy = energy; // Reset previous energy ke current
+        resetPending = true;
+        
+        // Simpan ke Preferences
+        preferences.begin("pzem", false);
+        preferences.putFloat("totalEnergy", 0.0);
+        preferences.putFloat("previousEnergy", previousEnergy);
+        preferences.end();
+        
+        Serial.println("🔄 ===== ENERGY RESET ===== ");
+        Serial.println("💰 Total Energy: 0.000 kWh");
+        Serial.println("💰 Cost: Rp 0");
+        Serial.println("============================");
+        
+        // Kirim update setelah reset
+        publishData();
+        return;
+      }
+    }
+    
+    // ===== RELAY COMMAND =====
     int relay = doc["relay"];
     bool status = doc["status"];
     
     if (relay == 1) {
       digitalWrite(RELAY1_PIN, status ? LOW : HIGH);
       relay1Status = status;
+      Serial.printf("🔴 Relay 1: %s\n", status ? "ON" : "OFF");
     } else if (relay == 2) {
       digitalWrite(RELAY2_PIN, status ? LOW : HIGH);
       relay2Status = status;
+      Serial.printf("🔴 Relay 2: %s\n", status ? "ON" : "OFF");
     } else if (relay == 3) {
       digitalWrite(RELAY3_PIN, status ? LOW : HIGH);
       relay3Status = status;
+      Serial.printf("🔴 Relay 3: %s\n", status ? "ON" : "OFF");
     }
   }
 }
 
 void connectMQTT() {
   while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
-    if (client.connect("ESP32Client")) {
-      Serial.println("MQTT Connected!");
+    Serial.print("📡 Connecting to MQTT...");
+    if (client.connect("ESP32_PZEM")) {
+      Serial.println(" ✅ Connected!");
       client.subscribe(mqtt_topic_relay);
+      client.subscribe(mqtt_topic_reset);
+      Serial.println("📡 Subscribed to:");
+      Serial.println("   - " + String(mqtt_topic_relay));
+      Serial.println("   - " + String(mqtt_topic_reset));
     } else {
-      Serial.print("MQTT failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.printf(" ❌ Failed (rc=%d)\n", client.state());
       delay(5000);
     }
   }
@@ -234,17 +333,23 @@ void publishData() {
   doc["pf"] = pf;
   doc["totalEnergy"] = totalEnergy;
   doc["estimatedCost"] = estimatedCost;
-  doc["costPerKwh"] = costPerKwh;
+  doc["costPerKwh"] = TARIF_PER_KWH;
   doc["relay1"] = relay1Status;
   doc["relay2"] = relay2Status;
   doc["relay3"] = relay3Status;
   doc["timestamp"] = millis() / 1000;
+  doc["resetStatus"] = resetPending ? "RESET_DONE" : "NORMAL";
   
   char buffer[512];
   serializeJson(doc, buffer);
   
-  client.publish(mqtt_topic, buffer);
-  Serial.println("Data published to MQTT");
+  if (client.publish(mqtt_topic, buffer)) {
+    Serial.println("📤 Data published to MQTT");
+    if (resetPending) {
+      Serial.println("   ✅ Reset confirmed sent to dashboard");
+      resetPending = false;
+    }
+  }
 }
 
 // ============ FUNGSI LOOP ============
@@ -281,28 +386,65 @@ void loop() {
 
 // ============ FUNGSI BACA PZEM ============
 void readPZEMData() {
-  voltage = pzem.voltage();
-  current = pzem.current();
-  power = pzem.power();
-  energy = pzem.energy();
-  frequency = pzem.frequency();
-  pf = pzem.pf();
+  float v = pzem.voltage();
+  float c = pzem.current();
+  float p = pzem.power();
+  float e = pzem.energy();
+  float f = pzem.frequency();
+  float pfVal = pzem.pf();
   
-  if (isnan(voltage) || isnan(current) || isnan(power)) {
-    Serial.println("Error reading PZEM data!");
-    voltage = 0;
-    current = 0;
-    power = 0;
-    energy = 0;
-    frequency = 0;
-    pf = 0;
+  if (!isnan(v) && !isnan(c) && !isnan(p)) {
+    voltage = v;
+    current = c;
+    power = p;
+    energy = e;
+    frequency = f;
+    pf = pfVal;
+    pzemOK = true;
+    Serial.printf("📊 PZEM: V=%.1fV, A=%.2fA, W=%.1fW, kWh=%.3f, PF=%.2f\n", 
+                  voltage, current, power, energy, pf);
+  } else {
+    if (!pzemOK) {
+      Serial.println("⚠️ PZEM read error - using default values");
+      voltage = 0;
+      current = 0;
+      power = 0;
+      energy = 0;
+      frequency = 0;
+      pf = 0;
+    } else {
+      Serial.println("⚠️ PZEM read error - using last valid values");
+    }
   }
 }
 
 // ============ FUNGSI HITUNG BIAYA ============
 void calculateCost() {
-  totalEnergy += (power / 1000.0) * (UPDATE_INTERVAL / 3600.0);
-  estimatedCost = totalEnergy * costPerKwh;
+  // Hanya tambahkan jika PZEM OK dan ada daya
+  if (pzemOK && power > 0) {
+    // Hitung delta energi dari PZEM
+    if (energy >= previousEnergy) {
+      float deltaEnergy = energy - previousEnergy;
+      totalEnergy += deltaEnergy;
+    } else {
+      // Jika energy reset, gunakan nilai saat ini
+      float deltaEnergy = energy;
+      totalEnergy += deltaEnergy;
+    }
+    previousEnergy = energy;
+    
+    // Simpan ke Preferences setiap 10 detik
+    static unsigned long lastSave = 0;
+    if (millis() - lastSave >= 10000) {
+      lastSave = millis();
+      preferences.begin("pzem", false);
+      preferences.putFloat("totalEnergy", totalEnergy);
+      preferences.putFloat("previousEnergy", previousEnergy);
+      preferences.end();
+    }
+  }
+  
+  estimatedCost = totalEnergy * TARIF_PER_KWH;
 }
 
 // ============ FUNGSI UPDATE DISPLAY ============
@@ -356,35 +498,53 @@ void updateDisplay() {
   
   tft.setCursor(2, 64);
   tft.setTextColor(ST7735_GREEN);
+  tft.print("Total:");
+  tft.setTextColor(ST7735_WHITE);
+  tft.print(totalEnergy, 2);
+  tft.print(" kWh");
+  
+  tft.setCursor(2, 80);
+  tft.setTextColor(ST7735_GREEN);
   tft.print("Biaya: Rp");
   tft.setTextColor(ST7735_WHITE);
   tft.print(estimatedCost, 0);
   
-  tft.setCursor(2, 80);
+  tft.setCursor(2, 96);
   tft.setTextColor(ST7735_CYAN);
-  tft.print("Relay: ");
+  tft.print("Tarif: Rp");
+  tft.setTextColor(ST7735_WHITE);
+  tft.print(TARIF_PER_KWH, 0);
+  tft.print("/kWh");
+  
+  tft.setCursor(2, 112);
+  tft.setTextColor(ST7735_CYAN);
+  tft.print("R:");
   
   tft.setTextColor(relay1Status ? ST7735_GREEN : ST7735_RED);
-  tft.print(relay1Status ? "ON" : "OFF");
+  tft.print(relay1Status ? "1ON" : "1OFF");
   tft.print(" ");
   
   tft.setTextColor(relay2Status ? ST7735_GREEN : ST7735_RED);
-  tft.print(relay2Status ? "ON" : "OFF");
+  tft.print(relay2Status ? "2ON" : "2OFF");
   tft.print(" ");
   
   tft.setTextColor(relay3Status ? ST7735_GREEN : ST7735_RED);
-  tft.print(relay3Status ? "ON" : "OFF");
-  
-  tft.setCursor(2, 100);
-  tft.setTextColor(ST7735_WHITE);
-  tft.print("MQTT: ");
-  tft.setTextColor(client.connected() ? ST7735_GREEN : ST7735_RED);
-  tft.print(client.connected() ? "ON" : "OFF");
+  tft.print(relay3Status ? "3ON" : "3OFF");
   
   if (WiFi.status() == WL_CONNECTED) {
     tft.setCursor(100, 2);
     tft.setTextColor(ST7735_GREEN);
     tft.print("W");
+  }
+  
+  if (pzemOK) {
+    tft.setCursor(115, 2);
+    tft.setTextColor(ST7735_GREEN);
+    tft.print("P");
+  } else {
+    tft.setCursor(115, 2);
+    tft.setTextColor(ST7735_RED);
+    tft.print("P");
   }
 }
 
@@ -400,6 +560,9 @@ void displaySplash() {
   tft.print("PZEM MQTT");
   tft.setTextColor(ST7735_GREEN);
   tft.setCursor(15, 65);
-  tft.print("Loading...");
+  tft.print("900 VA Subsidi");
+  tft.setTextColor(ST7735_YELLOW);
+  tft.setCursor(15, 80);
+  tft.print("Rp 605/kWh");
   delay(2000);
 }
